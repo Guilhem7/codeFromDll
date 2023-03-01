@@ -13,7 +13,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
 	DWORD                AddressOfEntryPoint;
 	DWORD                BaseOfCode;
 	DWORD                BaseOfData;
-	DWORD                ImageBase; // Not sure of this, I though it was 64 bits...
+	DWORD                ImageBase;
 	DWORD                SectionAlignment;
 	DWORD                FileAlignment;
 	WORD                 MajorOperatingSystemVersion;
