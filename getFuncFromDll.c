@@ -225,6 +225,7 @@ int main() {
 					printf("[-] Function not found..\n");
 				}
 			}
+			free(funcNames);
 		}
 		
 	}
