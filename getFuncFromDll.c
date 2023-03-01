@@ -143,6 +143,7 @@ int parseSectionHdrs(FILE * fp, int chunk_addr, BYTE * memHeader, char * section
 			break;
 		}
 	}
+	free(res);
 	return offsetWithRva;
 }
 
@@ -227,6 +228,7 @@ int main() {
 		}
 		
 	}
+	fclose(fp);
 
 	return 0;
 }
