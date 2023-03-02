@@ -196,7 +196,24 @@ int GetCodeFunction(char* target_dll, char* target_func, unsigned char * code) {
 				readFileStr(fp, tempFuncName, *(int*)tempFuncAddr - offsetRVA);
 
 				if (strcmp(tempFuncName, target_func) == 0) {
-					readFileMem(fp, tempFuncAddr, imgExpDir.AddressOfFunctions - offsetRVA + (4 * i), 4);
+					int firstOrdinal = 0;
+					int ordinalIndex = imgExpDir.Base + i + 1;
+
+					/* 
+					* i is the index in the array of function name
+					* We now calculate the ordianl of the function:
+					*	Ordinal = (Base Address + i + 1) // i start at 0
+					* So now we go to the address of functions pointer [Array of pointer] at the index of ordinal
+					* Knowing that ordinal start at (Base address)
+					*/
+					int AddressForFunc = imgExpDir.AddressOfFunctions - offsetRVA + (ordinalIndex * 4) - (imgExpDir.Base * 4);
+					/*printf("[+] Address of the pointer to the function in the file: 0x%X\n[+] Ordinal: 0x%x\n[+] Base: 0x%x\n[+] Iteration: %d\n",
+						AddressForFunc,
+						ordinalIndex,
+						imgExpDir.Base,
+						i);*/
+
+					readFileMem(fp, tempFuncAddr, AddressForFunc, 4);
 					int addrOfFuncCode = *(int*)tempFuncAddr;
 
 					readFileMemUntil(fp, addrOfFuncCode - offsetRVAOfText, code);
