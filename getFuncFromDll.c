@@ -13,7 +13,7 @@ typedef struct _IMAGE_OPTIONAL_HEADER {
 	DWORD                AddressOfEntryPoint;
 	DWORD                BaseOfCode;
 	DWORD                BaseOfData;
-	DWORD                ImageBase;
+	DWORD                ImageBase; // Not sure of this, I though it was 64 bits...
 	DWORD                SectionAlignment;
 	DWORD                FileAlignment;
 	WORD                 MajorOperatingSystemVersion;
@@ -147,89 +147,91 @@ int parseSectionHdrs(FILE * fp, int chunk_addr, BYTE * memHeader, char * section
 	return offsetWithRva;
 }
 
-int main() {
+int GetCodeFunction(char* target_dll, char* target_func, unsigned char * code) {
 	PIMAGE_OPTIONAL_HEADER64 OptionalHeader = NULL;
-
-	char* target_dll = "C:\\Windows\\System32\\ntdll.dll";
-	char* target_func = "NtReadVirtualMemory";
 	FILE* fp = NULL;
-	
+
 	int chunk_addr = 0;
-	void * chunk[CHUNK_SIZE] = {0};
-	BYTE code[MAX_CODE_LENGTH] = { 0 };
+	void* chunk[CHUNK_SIZE] = { 0 };
 
 	IMAGE_DATA_DIRECTORY exportDirectoryAddr;
 	IMAGE_EXPORT_DIRECTORY imgExpDir;
-
 	exportDirectoryAddr.VirtualAddress = NULL;
 	exportDirectoryAddr.Size = 0;
 
 	fopen_s(&fp, target_dll, "rb");
 	if (fp == NULL) {
-		printf("Error opening file\n");
-		exit(1);		
+		return 1;
 	}
 
-	if(fread(chunk, sizeof(BYTE), CHUNK_SIZE, fp) > 0) {
+	if (fread(chunk, sizeof(BYTE), CHUNK_SIZE, fp) > 0) {
 		chunk_addr = memFoundPat(chunk, CHUNK_SIZE, IMAGE_NT_OPTIONAL_HDR64_MAGIC);
 		if (chunk_addr == -1) {
-			printf("Failed..\n");
+			return 1;
 		}
 		else {
 			OptionalHeader = (PIMAGE_OPTIONAL_HEADER64)((DWORDLONG)chunk + chunk_addr);
 			exportDirectoryAddr = OptionalHeader->DataDirectory[0];
 		}
-		//hexprint( (void *)((DWORDLONG)chunk + chunk_addr), 2);
 	}
 
 	int offsetRVA = parseSectionHdrs(fp, chunk_addr, chunk, ".rdata");
 	int offsetRVAOfText = parseSectionHdrs(fp, chunk_addr, chunk, ".text");
-	if (offsetRVA == -1) {
+	if (offsetRVA == -1 || offsetRVAOfText == -1) {
 		printf("[-] WOW such error..\n");
 		return 1;
 	}
-	printf("[+] Found: offset: 0x%X\n", offsetRVA);
 
+	// Start recovering code
 	if (exportDirectoryAddr.Size > 0) {
-		printf("[+] Size of export directory (%d Mo)\n", exportDirectoryAddr.Size/1024);
 		fseek(fp, exportDirectoryAddr.VirtualAddress - offsetRVA, SEEK_SET);
 		if (fread(chunk, sizeof(BYTE), CHUNK_SIZE, fp) > 0) {
 			memcpy(&imgExpDir, chunk, sizeof(IMAGE_EXPORT_DIRECTORY));
-			printf("[+] Number of functions: 0x%X\n", imgExpDir.NumberOfFunctions);
-			printf("[+] Functions start at address: 0x%X\n", (imgExpDir.AddressOfFunctions - offsetRVA) );
 			void* funcNames = malloc(imgExpDir.NumberOfFunctions);
 			char* tempFuncName[500] = { 0 };
 			void* tempFuncAddr[4] = { 0 };
 
 			for (int i = 0; i < imgExpDir.NumberOfFunctions; i++) {
-				readFileMem(fp, tempFuncAddr, imgExpDir.AddressOfNames - offsetRVA + (4*i) , 4);
+				readFileMem(fp, tempFuncAddr, imgExpDir.AddressOfNames - offsetRVA + (4 * i), 4);
 				readFileStr(fp, tempFuncName, *(int*)tempFuncAddr - offsetRVA);
-			
-				if (strcmp(tempFuncName, target_func) == 0) {
-					printf("[+] Found function [%s]\n", target_func);
-					printf("[+] Address of the function code: 0x%X\n", imgExpDir.AddressOfFunctions - offsetRVA + (4 * i));
 
-					memset(tempFuncName, 0, 8);
-					readFileMem(fp, tempFuncName, imgExpDir.AddressOfFunctions - offsetRVA + (4 * i), 4);
-					printf("[+] Dumping code of function %s:\n\n", target_func);
-					int addrOfFuncCode = (unsigned long)(*tempFuncName);
-					
+				if (strcmp(tempFuncName, target_func) == 0) {
+					readFileMem(fp, tempFuncAddr, imgExpDir.AddressOfFunctions - offsetRVA + (4 * i), 4);
+					int addrOfFuncCode = *(int*)tempFuncAddr;
+
 					readFileMemUntil(fp, addrOfFuncCode - offsetRVAOfText, code);
 
-					// Function code recovered: printing in a C manner
-					printCode(code);
 					break;
 				}
 
 				if (i == imgExpDir.NumberOfFunctions - 1) {
 					printf("[-] Function not found..\n");
+					return 1;
 				}
+				memset(tempFuncName, 0, 200);
 			}
 			free(funcNames);
 		}
-		
+
 	}
 	fclose(fp);
+
+	return 0;
+}
+
+int main() {
+	char* target_dll = "C:\\Windows\\System32\\ntdll.dll";
+	char* target_func = "NtReadVirtualMemory";
+	BYTE code[MAX_CODE_LENGTH] = { 0 };
+
+	int res = GetCodeFunction(target_dll, target_func, code);
+	if (res != 0) {
+		return 1;
+	}
+
+	// Function code recovered: printing in a C manner
+	printf("[+] Dumping code of function %s:\n\n", target_func);
+	printCode(code);
 
 	return 0;
 }
